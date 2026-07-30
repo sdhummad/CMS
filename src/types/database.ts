@@ -12,6 +12,16 @@ export type AttendanceStatus = "present" | "absent" | "late" | "excused";
 export type StudentStatus = "active" | "inactive";
 export type AssessmentType = "quiz" | "surprise_quiz" | "midterm" | "final" | "homework_grade";
 
+// Shape of the `snapshot` jsonb column on report_cards -- computed once
+// at generate time, frozen once finalized. Not enforced by Postgres
+// (jsonb has no schema), just documented here for the app code that
+// reads/writes it.
+export interface ReportCardSnapshot {
+  period: { label: string; start_date: string; end_date: string };
+  attendance: { present: number; absent: number; late: number; excused: number; total: number };
+  assessments: { title: string; type: AssessmentType; date: string; score: number | null; max_score: number }[];
+}
+
 export interface Database {
   public: {
     Tables: {
@@ -150,6 +160,34 @@ export interface Database {
         };
         Insert: Partial<Database["public"]["Tables"]["assessment_scores"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["assessment_scores"]["Row"]>;
+        Relationships: [];
+      };
+      reporting_periods: {
+        Row: {
+          id: string;
+          term_id: string;
+          label: string;
+          start_date: string;
+          end_date: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["reporting_periods"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["reporting_periods"]["Row"]>;
+        Relationships: [];
+      };
+      report_cards: {
+        Row: {
+          id: string;
+          student_id: string;
+          class_id: string;
+          reporting_period_id: string;
+          snapshot: ReportCardSnapshot | null;
+          generated_at: string;
+          finalized_at: string | null;
+          finalized_by: string | null;
+          emailed_at: string | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["report_cards"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["report_cards"]["Row"]>;
         Relationships: [];
       };
     };

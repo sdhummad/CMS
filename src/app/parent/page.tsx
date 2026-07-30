@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { SignOutButton } from "@/components/sign-out-button";
 import { AddChildForm } from "./add-child-form";
+import type { ReportCardSnapshot } from "@/types/database";
 
 // Shape of the joined enrollment -> class -> level/teacher query below.
 // Hand-typed because the nested select isn't covered by our hand-written
@@ -20,6 +21,12 @@ interface WeeklyPlan {
   topics: string | null;
   classwork: string | null;
   homework: string | null;
+}
+
+interface FinalizedReport {
+  snapshot: ReportCardSnapshot;
+  finalized_at: string;
+  reporting_periods: { label: string } | null;
 }
 
 export default async function ParentPage() {
@@ -78,6 +85,26 @@ export default async function ParentPage() {
     plansByClass.set(plan.class_id, list);
   }
 
+  // finalized_at is not null is redundant with RLS (parents can never see
+  // a draft report_cards row at all) but kept explicit here for the same
+  // reason as the weekly_plans query above -- defense in depth reads
+  // clearly even if the policy ever changes.
+  const { data: finalizedReports } = studentIds.length
+    ? await supabase
+        .from("report_cards")
+        .select("student_id, snapshot, finalized_at, reporting_periods(label)")
+        .in("student_id", studentIds)
+        .not("finalized_at", "is", null)
+        .order("finalized_at", { ascending: false })
+    : { data: [] as (FinalizedReport & { student_id: string })[] };
+
+  const reportsByStudent = new Map<string, FinalizedReport[]>();
+  for (const report of finalizedReports ?? []) {
+    const list = reportsByStudent.get(report.student_id) ?? [];
+    if (list.length < 5) list.push(report);
+    reportsByStudent.set(report.student_id, list);
+  }
+
   const { data: recentAttendance } = studentIds.length
     ? await supabase
         .from("attendance_records")
@@ -111,6 +138,7 @@ export default async function ParentPage() {
           const classInfo = classByStudent.get(student.id);
           const attendance = attendanceByStudent.get(student.id) ?? [];
           const plans = classInfo ? plansByClass.get(classInfo.id) ?? [] : [];
+          const reports = reportsByStudent.get(student.id) ?? [];
           return (
             <div
               key={student.id}
@@ -159,6 +187,36 @@ export default async function ParentPage() {
                       {p.homework && <p className="text-gray-500">Homework: {p.homework}</p>}
                     </div>
                   ))}
+                </div>
+              )}
+              {reports.length > 0 && (
+                <div className="mt-3 space-y-3 border-t border-gray-100 pt-2 text-xs">
+                  {reports.map((r, i) => {
+                    const { period, attendance: att, assessments } = r.snapshot;
+                    return (
+                      <div key={i}>
+                        <p className="mb-0.5 font-medium text-gray-600">
+                          {r.reporting_periods?.label ?? period.label}{" "}
+                          <span className="font-normal text-gray-400">
+                            ({period.start_date} – {period.end_date})
+                          </span>
+                        </p>
+                        <p className="text-gray-500">
+                          Attendance: {att.present} present · {att.absent} absent · {att.late} late ·{" "}
+                          {att.excused} excused (of {att.total})
+                        </p>
+                        {assessments.length > 0 ? (
+                          assessments.map((a, j) => (
+                            <p key={j} className="text-gray-500">
+                              {a.title}: {a.score ?? "—"} / {a.max_score}
+                            </p>
+                          ))
+                        ) : (
+                          <p className="text-gray-400">No quizzes or exams recorded this period.</p>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

@@ -4,6 +4,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 import { setAttendance } from "./actions/attendance";
 import { saveDraftPlan, publishPlan } from "./actions/weekly-plan";
 import { createAssessment, setScore } from "./actions/assessments";
+import { generateReportCards, finalizeReportCard } from "./actions/report-cards";
 
 const STATUSES = ["present", "late", "absent", "excused"] as const;
 const ASSESSMENT_TYPES = ["quiz", "surprise_quiz", "midterm", "final", "homework_grade"] as const;
@@ -25,7 +26,7 @@ export default async function TeacherPage() {
 
   const { data: classes } = await supabase
     .from("classes")
-    .select("id, name, schedule, levels(name)")
+    .select("id, name, schedule, term_id, levels(name)")
     .eq("teacher_profile_id", user.id);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -57,6 +58,7 @@ export default async function TeacherPage() {
             <ClassRoster classId={klass.id} date={today} supabase={supabase} />
             <WeeklyPlanCard classId={klass.id} date={today} supabase={supabase} />
             <AssessmentsCard classId={klass.id} supabase={supabase} />
+            <ReportCardsCard classId={klass.id} termId={klass.term_id} supabase={supabase} />
           </div>
         </div>
       ))}
@@ -340,6 +342,111 @@ async function AssessmentsCard({
               </table>
             </div>
           ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+async function ReportCardsCard({
+  classId,
+  termId,
+  supabase,
+}: {
+  classId: string;
+  termId: string;
+  supabase: ReturnType<typeof createClient>;
+}) {
+  const { data: periods } = await supabase
+    .from("reporting_periods")
+    .select("id, label, start_date, end_date")
+    .eq("term_id", termId)
+    .order("start_date", { ascending: false });
+
+  const { data: enrollments } = await supabase
+    .from("enrollments")
+    .select("student_id, students(id, first_name, last_name)")
+    .eq("class_id", classId)
+    .is("end_date", null);
+
+  const periodIds = (periods ?? []).map((p) => p.id);
+  const { data: reportCards } = periodIds.length
+    ? await supabase
+        .from("report_cards")
+        .select("id, student_id, reporting_period_id, finalized_at, emailed_at")
+        .eq("class_id", classId)
+        .in("reporting_period_id", periodIds)
+    : { data: [] as { id: string; student_id: string; reporting_period_id: string; finalized_at: string | null; emailed_at: string | null }[] };
+
+  return (
+    <section className="rounded-xl border border-gray-200 bg-white p-5">
+      <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
+        Report cards
+      </h3>
+
+      {(periods ?? []).length === 0 ? (
+        <p className="text-sm text-gray-500">
+          No reporting periods yet -- ask your admin to create one for this term.
+        </p>
+      ) : (
+        <div className="space-y-5">
+          {(periods ?? []).map((period) => {
+            const cardByStudent = new Map(
+              (reportCards ?? [])
+                .filter((rc) => rc.reporting_period_id === period.id)
+                .map((rc) => [rc.student_id, rc])
+            );
+            return (
+              <div key={period.id} className="border-t border-gray-100 pt-3 first:border-t-0 first:pt-0">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    {period.label}{" "}
+                    <span className="font-normal text-gray-500">
+                      · {period.start_date} – {period.end_date}
+                    </span>
+                  </p>
+                  <form action={generateReportCards}>
+                    <input type="hidden" name="class_id" value={classId} />
+                    <input type="hidden" name="reporting_period_id" value={period.id} />
+                    <button className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium hover:bg-gray-50">
+                      Generate for all students
+                    </button>
+                  </form>
+                </div>
+                <table className="w-full text-sm">
+                  <tbody>
+                    {(enrollments ?? []).map((e: any) => {
+                      const rc = cardByStudent.get(e.student_id);
+                      return (
+                        <tr key={e.student_id} className="border-t border-gray-50">
+                          <td className="py-1.5">
+                            {e.students.first_name} {e.students.last_name}
+                          </td>
+                          <td className="py-1.5 text-right">
+                            {!rc && <span className="text-xs text-gray-400">Not generated</span>}
+                            {rc && !rc.finalized_at && (
+                              <form action={finalizeReportCard} className="inline">
+                                <input type="hidden" name="report_card_id" value={rc.id} />
+                                <button className="rounded-lg border border-indigo-600 bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">
+                                  Finalize &amp; email
+                                </button>
+                              </form>
+                            )}
+                            {rc?.finalized_at && (
+                              <span className="text-xs text-emerald-600">
+                                Finalized {rc.finalized_at.slice(0, 10)}
+                                {!rc.emailed_at && " (email pending)"}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })}
         </div>
       )}
     </section>
