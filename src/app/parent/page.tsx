@@ -8,10 +8,18 @@ import { AddChildForm } from "./add-child-form";
 // Database type (see types/database.ts) -- swap for generated types once
 // this is wired to a real Supabase project.
 interface ClassInfo {
+  id: string;
   name: string;
   schedule: string | null;
   levels: { name: string } | null;
   teacher: { full_name: string } | null;
+}
+
+interface WeeklyPlan {
+  week_start_date: string;
+  topics: string | null;
+  classwork: string | null;
+  homework: string | null;
 }
 
 export default async function ParentPage() {
@@ -39,7 +47,7 @@ export default async function ParentPage() {
   const { data: activeEnrollments } = studentIds.length
     ? await supabase
         .from("enrollments")
-        .select("student_id, classes(name, schedule, levels(name), teacher:profiles(full_name))")
+        .select("student_id, classes(id, name, schedule, levels(name), teacher:profiles(full_name))")
         .in("student_id", studentIds)
         .is("end_date", null)
     : { data: [] as { student_id: string; classes: ClassInfo | null }[] };
@@ -47,6 +55,28 @@ export default async function ParentPage() {
   const classByStudent = new Map<string, ClassInfo | null>(
     (activeEnrollments ?? []).map((e: any) => [e.student_id, e.classes])
   );
+
+  const classIds = [...new Set([...classByStudent.values()].filter(Boolean).map((c) => c!.id))];
+
+  // Only published plans are ever returned here for a parent -- RLS
+  // hides drafts from anyone but the teacher/admin, so this query can't
+  // accidentally leak an unpublished plan even if the filter below were
+  // removed.
+  const { data: publishedPlans } = classIds.length
+    ? await supabase
+        .from("weekly_plans")
+        .select("class_id, week_start_date, topics, classwork, homework")
+        .in("class_id", classIds)
+        .not("published_at", "is", null)
+        .order("week_start_date", { ascending: false })
+    : { data: [] as (WeeklyPlan & { class_id: string })[] };
+
+  const plansByClass = new Map<string, WeeklyPlan[]>();
+  for (const plan of publishedPlans ?? []) {
+    const list = plansByClass.get(plan.class_id) ?? [];
+    if (list.length < 3) list.push(plan);
+    plansByClass.set(plan.class_id, list);
+  }
 
   const { data: recentAttendance } = studentIds.length
     ? await supabase
@@ -80,6 +110,7 @@ export default async function ParentPage() {
         {(students ?? []).map((student) => {
           const classInfo = classByStudent.get(student.id);
           const attendance = attendanceByStudent.get(student.id) ?? [];
+          const plans = classInfo ? plansByClass.get(classInfo.id) ?? [] : [];
           return (
             <div
               key={student.id}
@@ -114,6 +145,18 @@ export default async function ParentPage() {
                       >
                         {a.status}
                       </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {plans.length > 0 && (
+                <div className="mt-3 space-y-2 border-t border-gray-100 pt-2 text-xs">
+                  {plans.map((p, i) => (
+                    <div key={i}>
+                      <p className="mb-0.5 font-medium text-gray-600">Week of {p.week_start_date}</p>
+                      {p.topics && <p className="text-gray-500">Topics: {p.topics}</p>}
+                      {p.classwork && <p className="text-gray-500">Classwork: {p.classwork}</p>}
+                      {p.homework && <p className="text-gray-500">Homework: {p.homework}</p>}
                     </div>
                   ))}
                 </div>

@@ -10,6 +10,7 @@
 export type Role = "admin" | "teacher" | "parent";
 export type AttendanceStatus = "present" | "absent" | "late" | "excused";
 export type StudentStatus = "active" | "inactive";
+export type AssessmentType = "quiz" | "surprise_quiz" | "midterm" | "final" | "homework_grade";
 
 export interface Database {
   public: {
@@ -105,6 +106,50 @@ export interface Database {
         };
         Insert: Partial<Database["public"]["Tables"]["attendance_records"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["attendance_records"]["Row"]>;
+        Relationships: [];
+      };
+      weekly_plans: {
+        Row: {
+          id: string;
+          class_id: string;
+          week_start_date: string;
+          topics: string | null;
+          classwork: string | null;
+          homework: string | null;
+          published_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["weekly_plans"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["weekly_plans"]["Row"]>;
+        Relationships: [];
+      };
+      assessments: {
+        Row: {
+          id: string;
+          class_id: string;
+          type: AssessmentType;
+          title: string;
+          date: string;
+          max_score: number;
+          created_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["assessments"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["assessments"]["Row"]>;
+        Relationships: [];
+      };
+      assessment_scores: {
+        Row: {
+          id: string;
+          assessment_id: string;
+          student_id: string;
+          score: number;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["assessment_scores"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["assessment_scores"]["Row"]>;
         Relationships: [];
       };
     };

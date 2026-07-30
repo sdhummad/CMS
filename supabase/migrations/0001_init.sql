@@ -2,8 +2,28 @@
 -- Weekly plans, assessments, and report cards are deferred to Phase 2/3
 -- migrations (see planning doc) so we don't build tables for features
 -- that don't exist yet.
+--
+-- This has been applied against the live project and verified with
+-- Supabase's security advisor (zero warnings). Two things to know if
+-- you're reading this as a reference:
+--
+-- 1. RLS helper functions (is_admin, my_household_id, etc.) live in a
+--    `private` schema, not `public`. PostgREST only auto-exposes
+--    functions in `public` as `/rest/v1/rpc/<name>` endpoints -- if
+--    these lived in `public`, anyone could call them directly as an
+--    API rather than only having them run implicitly inside RLS policy
+--    checks. Moving them to `private` (with USAGE/EXECUTE granted
+--    broadly, matching how `public` behaves by default) closes that off
+--    without touching what RLS itself is allowed to do internally.
+-- 2. LANGUAGE sql functions are parsed against the catalog at CREATE
+--    time (unlike plpgsql, which is opaque until called), so
+--    `private.my_taught_class_ids()` and
+--    `private.my_household_student_ids()` are defined only after
+--    `classes` and `students` exist, further down this file.
 
 create extension if not exists "pgcrypto";
+create schema if not exists private;
+grant usage on schema private to public;
 
 -- ---------------------------------------------------------------------
 -- Households and profiles
@@ -34,7 +54,7 @@ create table profiles (
 -- household. Admin/teacher accounts are never created through public
 -- sign-up -- an admin promotes a profile's role after the fact -- so
 -- this is the only path that creates a household + profile pair.
-create function public.handle_new_auth_user()
+create function private.handle_new_auth_user()
 returns trigger
 language plpgsql
 security definer
@@ -63,38 +83,33 @@ $$;
 
 create trigger on_auth_user_created
   after insert on auth.users
-  for each row execute function public.handle_new_auth_user();
+  for each row execute function private.handle_new_auth_user();
 
 -- ---------------------------------------------------------------------
 -- Role-check helpers, used throughout the RLS policies below.
 -- SECURITY DEFINER so they can read `profiles` even though the calling
 -- user's own RLS policy on `profiles` wouldn't otherwise let them see
 -- rows other than their own.
+--
+-- Only the two functions that depend solely on `profiles` live here.
+-- The other two reference `classes` / `students`, which don't exist yet
+-- at this point in the script, so they're defined further down, right
+-- after their target tables are created.
 -- ---------------------------------------------------------------------
 
-create function public.is_admin()
+create function private.is_admin()
 returns boolean language sql security definer stable set search_path = public as $$
   select exists (select 1 from profiles where id = auth.uid() and role = 'admin');
 $$;
 
-create function public.is_teacher()
+create function private.is_teacher()
 returns boolean language sql security definer stable set search_path = public as $$
   select exists (select 1 from profiles where id = auth.uid() and role = 'teacher');
 $$;
 
-create function public.my_household_id()
+create function private.my_household_id()
 returns uuid language sql security definer stable set search_path = public as $$
   select household_id from profiles where id = auth.uid();
-$$;
-
-create function public.my_taught_class_ids()
-returns setof uuid language sql security definer stable set search_path = public as $$
-  select id from classes where teacher_profile_id = auth.uid();
-$$;
-
-create function public.my_household_student_ids()
-returns setof uuid language sql security definer stable set search_path = public as $$
-  select id from students where household_id = public.my_household_id();
 $$;
 
 -- ---------------------------------------------------------------------
@@ -154,6 +169,18 @@ create table enrollments (
   end_date date
 );
 
+-- Now that `classes` and `students` exist, the remaining role-check
+-- helpers (see the note above) can be defined.
+create function private.my_taught_class_ids()
+returns setof uuid language sql security definer stable set search_path = public as $$
+  select id from classes where teacher_profile_id = auth.uid();
+$$;
+
+create function private.my_household_student_ids()
+returns setof uuid language sql security definer stable set search_path = public as $$
+  select id from students where household_id = private.my_household_id();
+$$;
+
 -- ---------------------------------------------------------------------
 -- Attendance
 --
@@ -174,6 +201,14 @@ create table attendance_records (
   marked_at timestamptz not null default now(),
   unique (class_id, student_id, date)
 );
+
+-- Grant execute on everything in `private` up front, matching how the
+-- `public` schema behaves by default -- this is what lets RLS policies
+-- below actually call these functions for anon/authenticated queries,
+-- without ever exposing them as PostgREST RPC endpoints (that exposure
+-- is controlled by which schemas PostgREST is told to serve, which
+-- stays just `public`).
+grant execute on all functions in schema private to public;
 
 -- ---------------------------------------------------------------------
 -- Row Level Security
@@ -196,92 +231,92 @@ alter table attendance_records enable row level security;
 -- households: a parent sees only their own; admin sees all.
 -- No direct insert policy -- rows are only created by the signup trigger.
 create policy "households_select" on households for select
-  using (id = public.my_household_id() or public.is_admin());
+  using (id = private.my_household_id() or private.is_admin());
 
 create policy "households_update_admin" on households for update
-  using (public.is_admin());
+  using (private.is_admin());
 
 -- profiles: everyone can see their own profile; admin sees all;
 -- teachers can see the profiles of parents/students they teach is not
 -- needed at the profile level (they read via students/classes instead).
 create policy "profiles_select_self_or_admin" on profiles for select
-  using (id = auth.uid() or public.is_admin());
+  using (id = auth.uid() or private.is_admin());
 
 create policy "profiles_update_self_or_admin" on profiles for update
-  using (id = auth.uid() or public.is_admin());
+  using (id = auth.uid() or private.is_admin());
 
 -- levels / terms: readable by anyone signed in (parents and teachers
 -- need level names for display), writable only by admin.
 create policy "levels_select_authenticated" on levels for select
   using (auth.role() = 'authenticated');
 create policy "levels_write_admin" on levels for all
-  using (public.is_admin()) with check (public.is_admin());
+  using (private.is_admin()) with check (private.is_admin());
 
 create policy "terms_select_authenticated" on terms for select
   using (auth.role() = 'authenticated');
 create policy "terms_write_admin" on terms for all
-  using (public.is_admin()) with check (public.is_admin());
+  using (private.is_admin()) with check (private.is_admin());
 
 -- classes: admin sees/manages all; a teacher sees their own classes;
 -- a parent sees only classes their own children are enrolled in.
 create policy "classes_select" on classes for select
   using (
-    public.is_admin()
+    private.is_admin()
     or teacher_profile_id = auth.uid()
     or id in (
-      select class_id from enrollments where student_id in (select public.my_household_student_ids())
+      select class_id from enrollments where student_id in (select private.my_household_student_ids())
     )
   );
 create policy "classes_write_admin" on classes for all
-  using (public.is_admin()) with check (public.is_admin());
+  using (private.is_admin()) with check (private.is_admin());
 
 -- students: a parent manages their own children; a teacher can see
 -- (read-only) students enrolled in their classes; admin sees/manages all.
 create policy "students_select" on students for select
   using (
-    household_id = public.my_household_id()
-    or public.is_admin()
+    household_id = private.my_household_id()
+    or private.is_admin()
     or id in (
-      select student_id from enrollments where class_id in (select public.my_taught_class_ids())
+      select student_id from enrollments where class_id in (select private.my_taught_class_ids())
     )
   );
 create policy "students_insert_own_household" on students for insert
-  with check (household_id = public.my_household_id() or public.is_admin());
+  with check (household_id = private.my_household_id() or private.is_admin());
 create policy "students_update_own_household_or_admin" on students for update
-  using (household_id = public.my_household_id() or public.is_admin());
+  using (household_id = private.my_household_id() or private.is_admin());
 
 -- enrollments: admin manages placement; teacher/parent can read the
 -- rows relevant to them (needed to know which class a child is in).
 create policy "enrollments_select" on enrollments for select
   using (
-    public.is_admin()
-    or class_id in (select public.my_taught_class_ids())
-    or student_id in (select public.my_household_student_ids())
+    private.is_admin()
+    or class_id in (select private.my_taught_class_ids())
+    or student_id in (select private.my_household_student_ids())
   );
 create policy "enrollments_write_admin" on enrollments for all
-  using (public.is_admin()) with check (public.is_admin());
+  using (private.is_admin()) with check (private.is_admin());
 
 -- attendance_records: teacher, parent, or admin can all write, but
 -- only for a class/student they actually have a relationship with --
 -- and only for a student genuinely enrolled in that class.
 create policy "attendance_select" on attendance_records for select
   using (
-    public.is_admin()
-    or class_id in (select public.my_taught_class_ids())
-    or student_id in (select public.my_household_student_ids())
+    private.is_admin()
+    or class_id in (select private.my_taught_class_ids())
+    or student_id in (select private.my_household_student_ids())
   );
 create policy "attendance_write" on attendance_records for insert
   with check (
     (
-      public.is_admin()
-      or class_id in (select public.my_taught_class_ids())
-      or student_id in (select public.my_household_student_ids())
+      private.is_admin()
+      or class_id in (select private.my_taught_class_ids())
+      or student_id in (select private.my_household_student_ids())
     )
     and student_id in (select student_id from enrollments where class_id = attendance_records.class_id)
   );
 create policy "attendance_update" on attendance_records for update
   using (
-    public.is_admin()
-    or class_id in (select public.my_taught_class_ids())
-    or student_id in (select public.my_household_student_ids())
+    private.is_admin()
+    or class_id in (select private.my_taught_class_ids())
+    or student_id in (select private.my_household_student_ids())
   );
