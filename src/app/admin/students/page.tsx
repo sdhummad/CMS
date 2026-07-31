@@ -1,7 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { SectionCard } from "@/components/section-card";
-import { placeStudent } from "../actions/placement";
+import { SelectAllCheckbox } from "@/components/select-all-checkbox";
+import { placeStudentsBulk } from "../actions/placement";
 
 export default async function StudentsPage() {
   const supabase = createClient();
@@ -26,39 +27,52 @@ export default async function StudentsPage() {
       <PageHeader title="Students" description="Every active student, and where they're placed." />
 
       {unplaced.length > 0 && (
-        <SectionCard title="Needs placement" description="These students aren't in a class yet.">
-          <table className="w-full text-sm">
-            <tbody>
-              {unplaced.map((s) => (
-                <tr key={s.id} className="border-t border-gray-100">
-                  <td className="py-2">
-                    {s.first_name} {s.last_name}
-                  </td>
-                  <td className="py-2">
-                    <form action={placeStudent} className="flex gap-2">
-                      <input type="hidden" name="student_id" value={s.id} />
-                      <select
-                        name="class_id"
-                        required
-                        className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
-                      >
-                        <option value="">Assign to class…</option>
-                        {(classesRaw ?? []).map((c: any) => (
-                          <option key={c.id} value={c.id}>
-                            {c.levels?.name ? `${c.levels.name} — ` : ""}
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                      <button className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm font-medium hover:bg-gray-50">
-                        Save
-                      </button>
-                    </form>
-                  </td>
+        <SectionCard
+          title="Needs placement"
+          description={`These ${unplaced.length} student${unplaced.length === 1 ? "" : "s"} aren't in a class yet. Select any number and place them into one class at once.`}
+        >
+          <form id="bulk-place-form" action={placeStudentsBulk}>
+            <div className="mb-3 flex flex-wrap items-center gap-2">
+              <select
+                name="class_id"
+                required
+                className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm"
+              >
+                <option value="">Assign selected to class…</option>
+                {(classesRaw ?? []).map((c: any) => (
+                  <option key={c.id} value={c.id}>
+                    {c.levels?.name ? `${c.levels.name} — ` : ""}
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <button className="rounded-lg border border-indigo-600 bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700">
+                Place selected
+              </button>
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-400">
+                  <th className="w-8 py-1.5 font-normal">
+                    <SelectAllCheckbox formId="bulk-place-form" checkboxName="student_ids" />
+                  </th>
+                  <th className="py-1.5 font-normal">Name</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {unplaced.map((s) => (
+                  <tr key={s.id} className="border-t border-gray-100">
+                    <td className="py-2">
+                      <input type="checkbox" name="student_ids" value={s.id} className="h-4 w-4 rounded border-gray-300" />
+                    </td>
+                    <td className="py-2">
+                      {s.first_name} {s.last_name}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </form>
         </SectionCard>
       )}
 

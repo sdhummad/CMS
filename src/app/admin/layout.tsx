@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { AppShell } from "@/components/app-shell";
 import type { SidebarSection } from "@/components/sidebar";
-import { LayoutDashboard, Layers, School, Users, CalendarClock, ShieldCheck } from "lucide-react";
+import { LayoutDashboard, Layers, CalendarDays, School, Users, CalendarClock, ShieldCheck } from "lucide-react";
 
 // This layout is what actually gates every /admin/* page -- it wraps
 // every page in this segment, so the role check here covers all of
@@ -36,7 +36,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     {
       heading: "Configure",
       items: [
-        { href: "/admin/levels-terms", label: "Levels & Terms", icon: <Layers className={iconClass} /> },
+        { href: "/admin/levels", label: "Levels", icon: <Layers className={iconClass} /> },
+        { href: "/admin/terms", label: "Terms", icon: <CalendarDays className={iconClass} /> },
         { href: "/admin/classes", label: "Classes", icon: <School className={iconClass} /> },
         { href: "/admin/students", label: "Students", icon: <Users className={iconClass} /> },
         { href: "/admin/reporting-periods", label: "Reporting Periods", icon: <CalendarClock className={iconClass} /> },

@@ -36,11 +36,23 @@ export default async function TeacherLayout({ children }: { children: React.Reac
   if (classes && classes.length > 0) {
     sections.push({
       heading: "My Classes",
-      items: classes.map((c: any) => ({
-        href: `/teacher/classes/${c.id}`,
-        label: c.levels?.name ? `${c.levels.name} — ${c.name}` : c.name,
-        icon: <BookOpen className={iconClass} />,
-      })),
+      items: classes.map((c: any) => {
+        const base = `/teacher/classes/${c.id}`;
+        return {
+          href: base,
+          label: c.levels?.name ? `${c.levels.name} — ${c.name}` : c.name,
+          icon: <BookOpen className={iconClass} />,
+          // Sub-pages for this class -- rendered indented in the sidebar
+          // (not a separate top tab bar) so navigation stays consistent
+          // with how admin/parent already work, and scales to many classes.
+          subItems: [
+            { href: `${base}/attendance`, label: "Attendance" },
+            { href: `${base}/plans`, label: "Weekly Plan" },
+            { href: `${base}/assessments`, label: "Quizzes & Exams" },
+            { href: `${base}/reports`, label: "Report Cards" },
+          ],
+        };
+      }),
     });
   }
 

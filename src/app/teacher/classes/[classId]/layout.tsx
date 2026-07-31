@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { TabBar } from "@/components/tab-bar";
 
 export default async function ClassLayout({
   children,
@@ -34,14 +33,9 @@ export default async function ClassLayout({
   const klass = klassRaw as any;
   if (!klass) redirect("/teacher");
 
-  const base = `/teacher/classes/${klass.id}`;
-  const tabs = [
-    { href: `${base}/attendance`, label: "Attendance" },
-    { href: `${base}/plans`, label: "Weekly Plan" },
-    { href: `${base}/assessments`, label: "Quizzes & Exams" },
-    { href: `${base}/reports`, label: "Report Cards" },
-  ];
-
+  // Navigation between this class's Attendance/Weekly Plan/Quizzes & Exams/
+  // Report Cards now lives in the sidebar (expanded under the class), not
+  // a top tab bar -- consistent with how admin/parent navigation works.
   return (
     <div>
       <Link href="/teacher" className="text-xs text-gray-400 hover:text-gray-600">
@@ -51,11 +45,7 @@ export default async function ClassLayout({
         {klass.levels?.name ? `${klass.levels.name} — ` : ""}
         {klass.name}
       </h1>
-      {klass.schedule && <p className="mb-4 text-sm text-gray-500">{klass.schedule}</p>}
-
-      <div className="mb-5">
-        <TabBar tabs={tabs} />
-      </div>
+      {klass.schedule && <p className="mb-5 text-sm text-gray-500">{klass.schedule}</p>}
 
       {children}
     </div>

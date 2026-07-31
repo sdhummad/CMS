@@ -21,6 +21,16 @@ export interface SidebarItem {
   // "/teacher/classes/x/attendance") would make the Overview link look
   // active too, which defeats the point of highlighting where you are.
   exact?: boolean;
+  // Nested pages under this item (e.g. a class's Attendance/Weekly Plan/
+  // Quizzes & Exams/Report Cards). Rendered indented underneath, but only
+  // while this item is the active one -- keeps the sidebar from turning
+  // into 4x-as-many-classes links once a teacher has more than one or two.
+  subItems?: SidebarSubItem[];
+}
+
+export interface SidebarSubItem {
+  href: string;
+  label: string;
 }
 
 export interface SidebarSection {
@@ -47,20 +57,44 @@ function NavLinks({ sections, onNavigate }: { sections: SidebarSection[]; onNavi
           <div className="space-y-0.5">
             {section.items.map((item) => {
               const active = isActive(pathname, item);
+              // A parent with subItems expands them once you're anywhere
+              // inside it, not just on exact match -- e.g. a class stays
+              // expanded while you're on its Attendance, Plans, etc. pages.
+              const expanded = !!item.subItems && active;
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={onNavigate}
-                  className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
-                    active
-                      ? "bg-indigo-50 font-medium text-indigo-700"
-                      : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
-                  }`}
-                >
-                  {item.icon}
-                  <span className="truncate">{item.label}</span>
-                </Link>
+                <div key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={onNavigate}
+                    className={`flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm transition-colors ${
+                      active
+                        ? "bg-indigo-50 font-medium text-indigo-700"
+                        : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                    }`}
+                  >
+                    {item.icon}
+                    <span className="truncate">{item.label}</span>
+                  </Link>
+                  {expanded && (
+                    <div className="ml-6 mt-0.5 space-y-0.5 border-l border-gray-100 pl-3">
+                      {item.subItems!.map((sub) => {
+                        const subActive = pathname === sub.href;
+                        return (
+                          <Link
+                            key={sub.href}
+                            href={sub.href}
+                            onClick={onNavigate}
+                            className={`block rounded-lg px-2.5 py-1.5 text-[13px] transition-colors ${
+                              subActive ? "font-medium text-indigo-700" : "text-gray-500 hover:text-gray-900"
+                            }`}
+                          >
+                            {sub.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               );
             })}
           </div>

@@ -32,3 +32,26 @@ export async function placeStudent(formData: FormData) {
   revalidatePath("/parent", "layout");
   revalidatePath("/teacher", "layout");
 }
+
+// Same history-preserving logic as placeStudent, applied to every
+// selected student at once -- the bulk-placement form's checkboxes feed
+// student_ids in here instead of submitting one row at a time.
+export async function placeStudentsBulk(formData: FormData) {
+  const { supabase } = await requireRole("admin");
+
+  const classId = String(formData.get("class_id") ?? "");
+  const studentIds = formData.getAll("student_ids").map(String).filter(Boolean);
+  if (!classId || studentIds.length === 0) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  await supabase.from("enrollments").update({ end_date: today }).in("student_id", studentIds).is("end_date", null);
+
+  await supabase.from("enrollments").insert(
+    studentIds.map((studentId) => ({ student_id: studentId, class_id: classId, start_date: today }))
+  );
+
+  revalidatePath("/admin", "layout");
+  revalidatePath("/parent", "layout");
+  revalidatePath("/teacher", "layout");
+}
