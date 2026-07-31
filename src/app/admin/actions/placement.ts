@@ -28,7 +28,7 @@ export async function placeStudent(formData: FormData) {
     start_date: today,
   });
 
-  revalidatePath("/admin");
-  revalidatePath("/parent");
-  revalidatePath("/teacher");
+  revalidatePath("/admin", "layout");
+  revalidatePath("/parent", "layout");
+  revalidatePath("/teacher", "layout");
 }

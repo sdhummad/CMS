@@ -51,6 +51,6 @@ export async function setAttendance(formData: FormData) {
     }
   }
 
-  revalidatePath("/teacher");
-  revalidatePath("/parent");
+  revalidatePath("/teacher", "layout");
+  revalidatePath("/parent", "layout");
 }

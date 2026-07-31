@@ -39,7 +39,7 @@ export async function createAssessment(formData: FormData) {
     max_score: maxScore,
   });
 
-  revalidatePath("/teacher");
+  revalidatePath("/teacher", "layout");
 }
 
 export async function setScore(formData: FormData) {
@@ -72,5 +72,5 @@ export async function setScore(formData: FormData) {
       { onConflict: "assessment_id,student_id" }
     );
 
-  revalidatePath("/teacher");
+  revalidatePath("/teacher", "layout");
 }

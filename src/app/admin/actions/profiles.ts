@@ -23,5 +23,5 @@ export async function updateProfileRole(formData: FormData) {
   if (!profileId || !isRole(role)) return;
 
   await supabase.from("profiles").update({ role }).eq("id", profileId);
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
 }

@@ -113,7 +113,7 @@ export async function generateReportCards(formData: FormData) {
     await supabase.from("report_cards").upsert(rows, { onConflict: "student_id,reporting_period_id" });
   }
 
-  revalidatePath("/teacher");
+  revalidatePath("/teacher", "layout");
 }
 
 export async function finalizeReportCard(formData: FormData) {
@@ -154,6 +154,6 @@ export async function finalizeReportCard(formData: FormData) {
     console.error("report card email failed", emailError);
   }
 
-  revalidatePath("/teacher");
-  revalidatePath("/parent");
+  revalidatePath("/teacher", "layout");
+  revalidatePath("/parent", "layout");
 }

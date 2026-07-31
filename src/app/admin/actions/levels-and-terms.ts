@@ -10,7 +10,7 @@ export async function createLevel(formData: FormData) {
   if (!name) return;
 
   await supabase.from("levels").insert({ name });
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
 }
 
 export async function createTerm(formData: FormData) {
@@ -22,5 +22,5 @@ export async function createTerm(formData: FormData) {
   if (!name || !startDate || !endDate) return;
 
   await supabase.from("terms").insert({ name, start_date: startDate, end_date: endDate });
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
 }

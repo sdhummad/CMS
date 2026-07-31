@@ -20,6 +20,6 @@ export async function createReportingPeriod(formData: FormData) {
     end_date: endDate,
   });
 
-  revalidatePath("/admin");
-  revalidatePath("/teacher");
+  revalidatePath("/admin", "layout");
+  revalidatePath("/teacher", "layout");
 }

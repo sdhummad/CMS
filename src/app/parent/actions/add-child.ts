@@ -52,6 +52,6 @@ export async function addChild(
     return { error: "Couldn't save that child. Try again." };
   }
 
-  revalidatePath("/parent");
+  revalidatePath("/parent", "layout");
   return { error: null };
 }

@@ -42,8 +42,8 @@ async function upsertPlan(formData: FormData, publish: boolean) {
 
   await supabase.from("weekly_plans").upsert(payload, { onConflict: "class_id,week_start_date" });
 
-  revalidatePath("/teacher");
-  revalidatePath("/parent");
+  revalidatePath("/teacher", "layout");
+  revalidatePath("/parent", "layout");
 }
 
 export async function saveDraftPlan(formData: FormData) {

@@ -1,13 +1,6 @@
-import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { SignOutButton } from "@/components/sign-out-button";
-import { AddChildForm } from "./add-child-form";
-import type { ReportCardSnapshot } from "@/types/database";
+import { PageHeader } from "@/components/page-header";
 
-// Shape of the joined enrollment -> class -> level/teacher query below.
-// Hand-typed because the nested select isn't covered by our hand-written
-// Database type (see types/database.ts) -- swap for generated types once
-// this is wired to a real Supabase project.
 interface ClassInfo {
   id: string;
   name: string;
@@ -16,36 +9,18 @@ interface ClassInfo {
   teacher: { full_name: string } | null;
 }
 
-interface WeeklyPlan {
-  week_start_date: string;
-  topics: string | null;
-  classwork: string | null;
-  homework: string | null;
-}
-
-interface FinalizedReport {
-  snapshot: ReportCardSnapshot;
-  finalized_at: string;
-  reporting_periods: { label: string } | null;
-}
-
-export default async function ParentPage() {
+export default async function ParentOverviewPage() {
   const supabase = createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/sign-in");
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("full_name")
-    .eq("id", user.id)
-    .single();
+  const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", user!.id).single();
 
   const { data: students } = await supabase
     .from("students")
-    .select("id, first_name, last_name, status")
+    .select("id, first_name, last_name")
     .eq("status", "active")
     .order("first_name");
 
@@ -63,245 +38,61 @@ export default async function ParentPage() {
     (activeEnrollments ?? []).map((e: any) => [e.student_id, e.classes])
   );
 
-  const classIds = [...new Set([...classByStudent.values()].filter(Boolean).map((c) => c!.id))];
-
-  // Only published plans are ever returned here for a parent -- RLS
-  // hides drafts from anyone but the teacher/admin, so this query can't
-  // accidentally leak an unpublished plan even if the filter below were
-  // removed.
-  const { data: publishedPlans } = classIds.length
-    ? await supabase
-        .from("weekly_plans")
-        .select("class_id, week_start_date, topics, classwork, homework")
-        .in("class_id", classIds)
-        .not("published_at", "is", null)
-        .order("week_start_date", { ascending: false })
-    : { data: [] as (WeeklyPlan & { class_id: string })[] };
-
-  const plansByClass = new Map<string, WeeklyPlan[]>();
-  for (const plan of publishedPlans ?? []) {
-    const list = plansByClass.get(plan.class_id) ?? [];
-    if (list.length < 3) list.push(plan);
-    plansByClass.set(plan.class_id, list);
-  }
-
-  // finalized_at is not null is redundant with RLS (parents can never see
-  // a draft report_cards row at all) but kept explicit here for the same
-  // reason as the weekly_plans query above -- defense in depth reads
-  // clearly even if the policy ever changes.
-  const { data: finalizedReports } = studentIds.length
-    ? await supabase
-        .from("report_cards")
-        .select("student_id, snapshot, finalized_at, reporting_periods(label)")
-        .in("student_id", studentIds)
-        .not("finalized_at", "is", null)
-        .order("finalized_at", { ascending: false })
-    : { data: [] as (FinalizedReport & { student_id: string })[] };
-
-  const reportsByStudent = new Map<string, FinalizedReport[]>();
-  for (const report of finalizedReports ?? []) {
-    const list = reportsByStudent.get(report.student_id) ?? [];
-    if (list.length < 5) list.push(report);
-    reportsByStudent.set(report.student_id, list);
-  }
-
-  const { data: recentAttendance } = studentIds.length
-    ? await supabase
-        .from("attendance_records")
-        .select("student_id, date, status")
-        .in("student_id", studentIds)
-        .order("date", { ascending: false })
-        .limit(40)
-    : { data: [] as { student_id: string; date: string; status: string }[] };
-
-  const attendanceByStudent = new Map<string, { date: string; status: string }[]>();
-  for (const rec of recentAttendance ?? []) {
-    const list = attendanceByStudent.get(rec.student_id) ?? [];
-    if (list.length < 5) list.push(rec);
-    attendanceByStudent.set(rec.student_id, list);
-  }
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: todaysAttendance } = studentIds.length
+    ? await supabase.from("attendance_records").select("student_id, status").in("student_id", studentIds).eq("date", today)
+    : { data: [] as { student_id: string; status: string }[] };
+  const statusByStudent = new Map((todaysAttendance ?? []).map((a) => [a.student_id, a.status]));
 
   return (
-    <main className="mx-auto max-w-4xl px-6 py-10">
-      <div className="mb-8 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">
-            Welcome back, {profile?.full_name ?? "there"}
-          </h1>
-          <p className="text-sm text-gray-500">Parent account</p>
+    <>
+      <PageHeader title={`Welcome back, ${profile?.full_name ?? "there"}`} description="A quick look at your household." />
+
+      {(students ?? []).length === 0 ? (
+        <p className="text-sm text-gray-500">
+          No children on your household yet — add one under <span className="font-medium">Household</span> in the sidebar.
+        </p>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {(students ?? []).map((student) => {
+            const classInfo = classByStudent.get(student.id);
+            const status = statusByStudent.get(student.id);
+            return (
+              <div key={student.id} className="rounded-xl border border-gray-200 bg-white p-4">
+                <h3 className="font-medium text-gray-900">
+                  {student.first_name} {student.last_name}
+                </h3>
+                {classInfo ? (
+                  <p className="mt-1 text-xs text-gray-500">
+                    {classInfo.levels?.name ?? "Unplaced"} · {classInfo.schedule ?? classInfo.name}
+                    {classInfo.teacher ? ` · ${classInfo.teacher.full_name}` : ""}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-xs text-amber-600">Not yet placed into a class</p>
+                )}
+                <p className="mt-3 text-xs text-gray-400">
+                  Today:{" "}
+                  {status ? (
+                    <span
+                      className={
+                        status === "present"
+                          ? "font-medium text-emerald-600"
+                          : status === "absent"
+                          ? "font-medium text-red-600"
+                          : "font-medium text-amber-600"
+                      }
+                    >
+                      {status}
+                    </span>
+                  ) : (
+                    "not marked yet"
+                  )}
+                </p>
+              </div>
+            );
+          })}
         </div>
-        <SignOutButton />
-      </div>
-
-      <div className="mb-10 grid gap-4 sm:grid-cols-2">
-        {(students ?? []).map((student) => {
-          const classInfo = classByStudent.get(student.id);
-          const attendance = attendanceByStudent.get(student.id) ?? [];
-          const plans = classInfo ? plansByClass.get(classInfo.id) ?? [] : [];
-          const reports = reportsByStudent.get(student.id) ?? [];
-          return (
-            <div
-              key={student.id}
-              className="rounded-xl border border-gray-200 bg-white p-4"
-            >
-              <h3 className="font-medium">
-                {student.first_name} {student.last_name}
-              </h3>
-              {classInfo ? (
-                <p className="mb-3 text-xs text-gray-500">
-                  {classInfo.levels?.name ?? "Unplaced"} · {classInfo.schedule ?? classInfo.name}
-                  {classInfo.teacher ? ` · ${classInfo.teacher.full_name}` : ""}
-                </p>
-              ) : (
-                <p className="mb-3 text-xs text-amber-600">
-                  Not yet placed into a class
-                </p>
-              )}
-              {attendance.length > 0 && (
-                <div className="space-y-1 border-t border-gray-100 pt-2 text-xs">
-                  {attendance.map((a, i) => (
-                    <div key={i} className="flex justify-between">
-                      <span className="text-gray-500">{a.date}</span>
-                      <span
-                        className={
-                          a.status === "present"
-                            ? "text-emerald-600"
-                            : a.status === "absent"
-                            ? "text-red-600"
-                            : "text-amber-600"
-                        }
-                      >
-                        {a.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {plans.length > 0 && (
-                <div className="mt-3 space-y-2 border-t border-gray-100 pt-2 text-xs">
-                  {plans.map((p, i) => (
-                    <div key={i}>
-                      <p className="mb-0.5 font-medium text-gray-600">Week of {p.week_start_date}</p>
-                      {p.topics && <p className="text-gray-500">Topics: {p.topics}</p>}
-                      {p.classwork && <p className="text-gray-500">Classwork: {p.classwork}</p>}
-                      {p.homework && <p className="text-gray-500">Homework: {p.homework}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {reports.length > 0 && (
-                <div className="mt-4 space-y-4">
-                  {reports.map((r, i) => {
-                    const { period, attendance: att, assessments } = r.snapshot;
-                    const attendancePct = att.total > 0 ? Math.round((att.present / att.total) * 100) : null;
-                    return (
-                      <div
-                        key={i}
-                        className="overflow-hidden rounded-xl border border-gray-200 shadow-sm"
-                      >
-                        <div className="flex items-center justify-between bg-indigo-600 px-4 py-2.5 text-white">
-                          <div>
-                            <p className="text-sm font-semibold">{r.reporting_periods?.label ?? period.label}</p>
-                            <p className="text-[11px] text-indigo-100">
-                              {period.start_date} – {period.end_date}
-                            </p>
-                          </div>
-                          {attendancePct !== null && (
-                            <div className="text-right">
-                              <p className="text-lg font-bold leading-none">{attendancePct}%</p>
-                              <p className="text-[10px] text-indigo-100">attendance</p>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="bg-white p-4">
-                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                            Attendance
-                          </p>
-                          <div className="mb-4 flex flex-wrap gap-1.5">
-                            <AttendanceChip label="Present" count={att.present} color="emerald" />
-                            <AttendanceChip label="Late" count={att.late} color="amber" />
-                            <AttendanceChip label="Absent" count={att.absent} color="red" />
-                            <AttendanceChip label="Excused" count={att.excused} color="gray" />
-                          </div>
-
-                          <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">
-                            Quizzes &amp; exams
-                          </p>
-                          {assessments.length > 0 ? (
-                            <div className="divide-y divide-gray-100 rounded-lg border border-gray-100">
-                              {assessments.map((a, j) => (
-                                <div key={j} className="flex items-center justify-between px-3 py-2 text-sm">
-                                  <div>
-                                    <p className="font-medium text-gray-700">{a.title}</p>
-                                    <p className="text-[11px] capitalize text-gray-400">
-                                      {a.type.replace("_", " ")} · {a.date}
-                                    </p>
-                                  </div>
-                                  <ScoreBadge score={a.score} maxScore={a.max_score} />
-                                </div>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-xs text-gray-400">No quizzes or exams recorded this period.</p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="rounded-xl border border-gray-200 bg-white p-5">
-        <h2 className="mb-3 text-sm font-semibold">Add a child</h2>
-        <AddChildForm />
-      </div>
-    </main>
-  );
-}
-
-// Tailwind's build-time scanner needs literal class names, not
-// interpolated ones -- hence the explicit switch instead of building a
-// `bg-${color}-50` string, which would silently fail to compile in.
-function AttendanceChip({
-  label,
-  count,
-  color,
-}: {
-  label: string;
-  count: number;
-  color: "emerald" | "amber" | "red" | "gray";
-}) {
-  const styles: Record<typeof color, string> = {
-    emerald: "bg-emerald-50 text-emerald-700",
-    amber: "bg-amber-50 text-amber-700",
-    red: "bg-red-50 text-red-700",
-    gray: "bg-gray-100 text-gray-600",
-  };
-  return (
-    <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${styles[color]}`}>
-      {count} {label}
-    </span>
-  );
-}
-
-function ScoreBadge({ score, maxScore }: { score: number | null; maxScore: number }) {
-  if (score === null) {
-    return (
-      <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-medium text-gray-400">
-        Not recorded
-      </span>
-    );
-  }
-  const pct = Math.round((score / maxScore) * 100);
-  const styles = pct >= 80 ? "bg-emerald-50 text-emerald-700" : pct >= 60 ? "bg-amber-50 text-amber-700" : "bg-red-50 text-red-700";
-  return (
-    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${styles}`}>
-      {score} / {maxScore} · {pct}%
-    </span>
+      )}
+    </>
   );
 }

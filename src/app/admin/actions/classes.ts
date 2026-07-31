@@ -22,5 +22,5 @@ export async function createClass(formData: FormData) {
     schedule,
   });
 
-  revalidatePath("/admin");
+  revalidatePath("/admin", "layout");
 }
