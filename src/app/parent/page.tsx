@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 
@@ -58,7 +59,11 @@ export default async function ParentOverviewPage() {
             const classInfo = classByStudent.get(student.id);
             const status = statusByStudent.get(student.id);
             return (
-              <div key={student.id} className="rounded-xl border border-gray-200 bg-white p-4">
+              <Link
+                key={student.id}
+                href={`/parent/attendance?child=${student.id}`}
+                className="rounded-xl border border-gray-200 bg-white p-4 transition-shadow hover:shadow-sm"
+              >
                 <h3 className="font-medium text-gray-900">
                   {student.first_name} {student.last_name}
                 </h3>
@@ -88,7 +93,7 @@ export default async function ParentOverviewPage() {
                     "not marked yet"
                   )}
                 </p>
-              </div>
+              </Link>
             );
           })}
         </div>

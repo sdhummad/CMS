@@ -1,10 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/page-header";
 import { SectionCard } from "@/components/section-card";
-
-interface ClassInfo {
-  id: string;
-}
+import { ChildSwitcher } from "@/components/child-switcher";
 
 interface WeeklyPlan {
   week_start_date: string;
@@ -13,7 +10,11 @@ interface WeeklyPlan {
   homework: string | null;
 }
 
-export default async function ParentHomeworkPage() {
+export default async function ParentHomeworkPage({
+  searchParams,
+}: {
+  searchParams: { child?: string };
+}) {
   const supabase = createClient();
 
   const { data: students } = await supabase
@@ -22,66 +23,68 @@ export default async function ParentHomeworkPage() {
     .eq("status", "active")
     .order("first_name");
 
-  const studentIds = (students ?? []).map((s) => s.id);
+  if (!students || students.length === 0) {
+    return (
+      <>
+        <PageHeader title="Homework" description="Topics, classwork, and homework your child's teacher has published." />
+        <p className="text-sm text-gray-500">No children on your household yet.</p>
+      </>
+    );
+  }
 
-  const { data: activeEnrollments } = studentIds.length
-    ? await supabase.from("enrollments").select("student_id, classes(id)").in("student_id", studentIds).is("end_date", null)
-    : { data: [] as { student_id: string; classes: ClassInfo | null }[] };
+  const validIds = new Set(students.map((s) => s.id));
+  const selectedId = searchParams.child && validIds.has(searchParams.child) ? searchParams.child : students[0].id;
+  const selected = students.find((s) => s.id === selectedId)!;
 
-  const classByStudent = new Map<string, ClassInfo | null>(
-    (activeEnrollments ?? []).map((e: any) => [e.student_id, e.classes])
-  );
-  const classIds = [...new Set([...classByStudent.values()].filter(Boolean).map((c) => c!.id))];
+  const { data: enrollmentRaw } = await supabase
+    .from("enrollments")
+    .select("classes(id)")
+    .eq("student_id", selectedId)
+    .is("end_date", null)
+    .maybeSingle();
+  // Cast to `any` -- embedded `classes(id)` infers as `never` against the
+  // hand-written Database type, same workaround used throughout the app.
+  const classId = (enrollmentRaw as any)?.classes?.id as string | undefined;
 
   // Only published plans are ever returned for a parent -- RLS hides
   // drafts from anyone but the teacher/admin, so this filter can't
   // accidentally leak an unpublished plan even if it were removed.
-  const { data: publishedPlans } = classIds.length
+  const { data: plans } = classId
     ? await supabase
         .from("weekly_plans")
-        .select("class_id, week_start_date, topics, classwork, homework")
-        .in("class_id", classIds)
+        .select("week_start_date, topics, classwork, homework")
+        .eq("class_id", classId)
         .not("published_at", "is", null)
         .order("week_start_date", { ascending: false })
-    : { data: [] as (WeeklyPlan & { class_id: string })[] };
-
-  const plansByClass = new Map<string, WeeklyPlan[]>();
-  for (const plan of publishedPlans ?? []) {
-    const list = plansByClass.get(plan.class_id) ?? [];
-    if (list.length < 8) list.push(plan);
-    plansByClass.set(plan.class_id, list);
-  }
+        .limit(8)
+    : { data: [] as WeeklyPlan[] };
 
   return (
     <>
       <PageHeader title="Homework" description="Topics, classwork, and homework your child's teacher has published." />
 
-      {(students ?? []).length === 0 ? (
-        <p className="text-sm text-gray-500">No children on your household yet.</p>
-      ) : (
-        students!.map((student) => {
-          const classInfo = classByStudent.get(student.id);
-          const plans = classInfo ? plansByClass.get(classInfo.id) ?? [] : [];
-          return (
-            <SectionCard key={student.id} title={`${student.first_name} ${student.last_name}`}>
-              {plans.length === 0 ? (
-                <p className="text-sm text-gray-400">Nothing published yet.</p>
-              ) : (
-                <div className="space-y-4">
-                  {plans.map((p, i) => (
-                    <div key={i} className="border-t border-gray-100 pt-3 first:border-t-0 first:pt-0">
-                      <p className="mb-1 text-sm font-medium text-gray-700">Week of {p.week_start_date}</p>
-                      {p.topics && <p className="text-sm text-gray-500">Topics: {p.topics}</p>}
-                      {p.classwork && <p className="text-sm text-gray-500">Classwork: {p.classwork}</p>}
-                      {p.homework && <p className="text-sm text-gray-500">Homework: {p.homework}</p>}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </SectionCard>
-          );
-        })
-      )}
+      <ChildSwitcher
+        basePath="/parent/homework"
+        selectedId={selectedId}
+        students={students.map((s) => ({ id: s.id, label: `${s.first_name} ${s.last_name}` }))}
+      />
+
+      <SectionCard title={`${selected.first_name} ${selected.last_name}`}>
+        {(plans ?? []).length === 0 ? (
+          <p className="text-sm text-gray-400">Nothing published yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {(plans ?? []).map((p, i) => (
+              <div key={i} className="border-t border-gray-100 pt-3 first:border-t-0 first:pt-0">
+                <p className="mb-1 text-sm font-medium text-gray-700">Week of {p.week_start_date}</p>
+                {p.topics && <p className="text-sm text-gray-500">Topics: {p.topics}</p>}
+                {p.classwork && <p className="text-sm text-gray-500">Classwork: {p.classwork}</p>}
+                {p.homework && <p className="text-sm text-gray-500">Homework: {p.homework}</p>}
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
     </>
   );
 }
