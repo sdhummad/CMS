@@ -25,8 +25,12 @@ export default async function TeacherLayout({ children }: { children: React.Reac
     .eq("teacher_profile_id", user.id)
     .order("name");
 
+  // Icons are rendered here (not passed as bare component references) --
+  // AppShell/RoleSidebar is a Client Component, and a function reference
+  // can't cross the Server->Client prop boundary, only actual elements.
+  const iconClass = "h-4 w-4 shrink-0";
   const sections: SidebarSection[] = [
-    { items: [{ href: "/teacher", label: "Overview", icon: LayoutDashboard, exact: true }] },
+    { items: [{ href: "/teacher", label: "Overview", icon: <LayoutDashboard className={iconClass} />, exact: true }] },
   ];
 
   if (classes && classes.length > 0) {
@@ -35,7 +39,7 @@ export default async function TeacherLayout({ children }: { children: React.Reac
       items: classes.map((c: any) => ({
         href: `/teacher/classes/${c.id}`,
         label: c.levels?.name ? `${c.levels.name} — ${c.name}` : c.name,
-        icon: BookOpen,
+        icon: <BookOpen className={iconClass} />,
       })),
     });
   }

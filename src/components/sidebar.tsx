@@ -3,13 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { Menu, X, type LucideIcon } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { SignOutButton } from "./sign-out-button";
 
 export interface SidebarItem {
   href: string;
   label: string;
-  icon: LucideIcon;
+  // A pre-rendered icon element (e.g. `<Layers className="h-4 w-4" />`),
+  // not a component reference. Layouts that build SidebarSection[] are
+  // Server Components passing data into this Client Component -- a raw
+  // component function can't cross that boundary as a prop (React can
+  // only serialize actual elements/children across it), so every caller
+  // renders its icon before handing it over.
+  icon: React.ReactNode;
   // Root/overview links (e.g. "/teacher") should only light up on an
   // exact match -- without this, every nested route under it (like
   // "/teacher/classes/x/attendance") would make the Overview link look
@@ -41,7 +47,6 @@ function NavLinks({ sections, onNavigate }: { sections: SidebarSection[]; onNavi
           <div className="space-y-0.5">
             {section.items.map((item) => {
               const active = isActive(pathname, item);
-              const Icon = item.icon;
               return (
                 <Link
                   key={item.href}
@@ -53,7 +58,7 @@ function NavLinks({ sections, onNavigate }: { sections: SidebarSection[]; onNavi
                       : "text-gray-600 hover:bg-gray-50 hover:text-gray-900"
                   }`}
                 >
-                  <Icon className="h-4 w-4 shrink-0" strokeWidth={2} />
+                  {item.icon}
                   <span className="truncate">{item.label}</span>
                 </Link>
               );

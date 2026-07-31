@@ -23,18 +23,24 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const { data: profile } = await supabase.from("profiles").select("full_name, role").eq("id", user.id).single();
   if (profile?.role !== "admin") redirect("/");
 
+  // Icons are rendered here (not passed as bare component references) --
+  // AppShell/RoleSidebar is a Client Component, and a function reference
+  // can't cross the Server->Client prop boundary, only actual elements.
+  const iconClass = "h-4 w-4 shrink-0";
   const sections: SidebarSection[] = [
     {
-      items: [{ href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true }],
+      items: [
+        { href: "/admin", label: "Overview", icon: <LayoutDashboard className={iconClass} />, exact: true },
+      ],
     },
     {
       heading: "Configure",
       items: [
-        { href: "/admin/levels-terms", label: "Levels & Terms", icon: Layers },
-        { href: "/admin/classes", label: "Classes", icon: School },
-        { href: "/admin/students", label: "Students", icon: Users },
-        { href: "/admin/reporting-periods", label: "Reporting Periods", icon: CalendarClock },
-        { href: "/admin/accounts", label: "Accounts", icon: ShieldCheck },
+        { href: "/admin/levels-terms", label: "Levels & Terms", icon: <Layers className={iconClass} /> },
+        { href: "/admin/classes", label: "Classes", icon: <School className={iconClass} /> },
+        { href: "/admin/students", label: "Students", icon: <Users className={iconClass} /> },
+        { href: "/admin/reporting-periods", label: "Reporting Periods", icon: <CalendarClock className={iconClass} /> },
+        { href: "/admin/accounts", label: "Accounts", icon: <ShieldCheck className={iconClass} /> },
       ],
     },
   ];
